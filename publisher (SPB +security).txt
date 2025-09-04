@@ -1,0 +1,56 @@
+import json
+import time
+import paho.mqtt.client as mqtt
+import random
+
+BROKER = "localhost"
+PORT = 1883
+USERNAME = "mqttuser"
+PASSWORD = "yourpassword"
+NODE_ID = "Node1"
+DEVICE_ID = "Device1"
+
+# Sparkplug B topics
+BIRTH_TOPIC = f"spBv1.0/{NODE_ID}/NBIRTH"
+DEVICE_TOPIC = f"spBv1.0/{NODE_ID}/{DEVICE_ID}/DBIRTH"
+DATA_TOPIC = f"spBv1.0/{NODE_ID}/{DEVICE_ID}/DDEATH"
+
+# Last Will & Testament
+LWT_TOPIC = f"spBv1.0/{NODE_ID}/{DEVICE_ID}/DDEATH"
+LWT_MSG = json.dumps({"status": "offline"})
+LWT_QOS = 1
+LWT_RETAIN = True
+
+client = mqtt.Client(client_id=f"{NODE_ID}-{DEVICE_ID}", clean_session=True)
+client.username_pw_set(USERNAME, PASSWORD)
+client.will_set(LWT_TOPIC, payload=LWT_MSG, qos=LWT_QOS, retain=LWT_RETAIN)
+
+# Callbacks
+def on_connect(client, userdata, flags, rc):
+    print(f"Connected with code {rc}")
+    # Publish Node BIRTH
+    nbirth = {"metrics": ["temperature", "humidity"], "status": "online"}
+    client.publish(BIRTH_TOPIC, json.dumps(nbirth), qos=1, retain=True)
+    # Publish Device BIRTH
+    dbirth = {"metrics": ["temperature", "humidity"], "status": "online"}
+    client.publish(DEVICE_TOPIC, json.dumps(dbirth), qos=1, retain=True)
+
+client.on_connect = on_connect
+client.connect(BROKER, PORT)
+client.loop_start()
+
+# Publish data
+try:
+    while True:
+        data = {
+            "temperature": round(20 + random.random() * 10, 2),
+            "humidity": round(40 + random.random() * 20, 2),
+            "status": "online"
+        }
+        client.publish(DATA_TOPIC, json.dumps(data), qos=1, retain=True)
+        print(f"Published: {data}")
+        time.sleep(2)
+except KeyboardInterrupt:
+    print("Publisher stopped")
+    client.loop_stop()
+    client.disconnect()

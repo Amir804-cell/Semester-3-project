@@ -1,0 +1,37 @@
+import json
+import paho.mqtt.client as mqtt
+
+BROKER = "localhost"
+PORT = 1883
+USERNAME = "mqttuser"
+PASSWORD = "yourpassword"
+NODE_ID = "Node1"
+DEVICE_ID = "Device1"
+
+DATA_TOPIC = f"spBv1.0/{NODE_ID}/{DEVICE_ID}/DDEATH"
+BIRTH_TOPIC = f"spBv1.0/{NODE_ID}/NBIRTH"
+DEVICE_TOPIC = f"spBv1.0/{NODE_ID}/{DEVICE_ID}/DBIRTH"
+
+# Callbacks
+def on_connect(client, userdata, flags, rc):
+    print(f"Connected with code {rc}")
+    client.subscribe([(BIRTH_TOPIC, 1), (DEVICE_TOPIC, 1), (DATA_TOPIC, 1)])
+
+def on_message(client, userdata, msg):
+    try:
+        payload = json.loads(msg.payload.decode())
+        print(f"Topic: {msg.topic} | Received: {payload}")
+    except json.JSONDecodeError:
+        print("Received non-JSON message")
+
+def on_disconnect(client, userdata, rc):
+    print("Disconnected!")
+
+client = mqtt.Client(client_id=f"subscriber-{NODE_ID}")
+client.username_pw_set(USERNAME, PASSWORD)
+client.on_connect = on_connect
+client.on_message = on_message
+client.on_disconnect = on_disconnect
+
+client.connect(BROKER, PORT)
+client.loop_forever()
