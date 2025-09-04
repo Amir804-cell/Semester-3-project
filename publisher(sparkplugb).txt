@@ -1,0 +1,40 @@
+import json
+import time
+import paho.mqtt.client as mqtt
+
+BROKER = "localhost"  # change if using remote broker
+PORT = 1883
+TOPIC = "sparkplugB/device1"
+CLIENT_ID = "publisher1"
+
+# Last Will & Testament
+LWT_TOPIC = "sparkplugB/device1/status"
+LWT_MSG = json.dumps({"status": "offline"})
+LWT_QOS = 1
+LWT_RETAIN = True
+
+# MQTT client
+client = mqtt.Client(client_id=CLIENT_ID, clean_session=True)
+client.will_set(LWT_TOPIC, payload=LWT_MSG, qos=LWT_QOS, retain=LWT_RETAIN)
+
+# Connect
+client.connect(BROKER, PORT)
+client.loop_start()
+print("Publisher connected!")
+
+# Publish JSON messages every 2 seconds
+try:
+    while True:
+        data = {
+            "temperature": 25.5,
+            "humidity": 60,
+            "status": "online"
+        }
+        message = json.dumps(data)
+        client.publish(TOPIC, payload=message, qos=1, retain=True)
+        print(f"Published: {message}")
+        time.sleep(2)
+except KeyboardInterrupt:
+    print("Publisher stopped")
+    client.loop_stop()
+    client.disconnect()
