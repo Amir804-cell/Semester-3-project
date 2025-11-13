@@ -99,3 +99,12 @@ echo -e "  2. Check logs:      ${BLUE}docker logs <container_name>${NC}"
 echo -e "  3. View data:       ${BLUE}http://localhost:9000${NC}"
 
 echo ""
+
+# Gør det executable med command: chmod +x quick_check.sh
+
+# Quick check (30 seconds): ./quick_check.sh 
+
+# Full test (1-2 minutes) ::python3 test_system.py
+
+# Svarende til health checks
+
