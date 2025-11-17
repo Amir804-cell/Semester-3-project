@@ -1,4 +1,4 @@
-include <ModbusMaster.h>
+#include <ModbusMaster.h>
 
 // ================ MODBUS COMMUNICATION CONFIGURATION ================
 #define RX_PIN 36           // UART2 RX pin
@@ -9,11 +9,9 @@ include <ModbusMaster.h>
 #define MODBUS_SLAVE_ID 1   // Slave device address
 
 // ================ DATA BUFFERS ================
-uint16_t holdingRegs[2];    // Buffer for holding registers (writable)
-uint16_t inputRegs[2];      // Buffer for input registers (read-only)
-char discreteStatus[2][10]; // Human-readable discrete input states
+uint16_t holdingRegs[2];
+uint16_t inputRegs[2];
 
-// Create Modbus master object
 ModbusMaster modbus;
 
 // ================ RS485 Direction Control ================
@@ -28,20 +26,16 @@ void postTransmission() {
 }
 
 void setup() {
-  // Initialize RS485 control pins
   pinMode(MAX485_RE_NEG, OUTPUT);
   pinMode(MAX485_DE, OUTPUT);
   digitalWrite(MAX485_RE_NEG, LOW);
   digitalWrite(MAX485_DE, LOW);
 
-  // Start serial communication for debugging
   Serial.begin(115200);
   Serial.println("ESP32 Modbus RTU Communication Initializing...");
 
-  // Configure UART2 for Modbus communication
   Serial2.begin(BAUD_RATE, SERIAL_8N1, RX_PIN, TX_PIN);
 
-  // Initialize Modbus master
   modbus.begin(MODBUS_SLAVE_ID, Serial2);
   modbus.preTransmission(preTransmission);
   modbus.postTransmission(postTransmission);
@@ -49,57 +43,57 @@ void setup() {
   Serial.println("Modbus RTU Communication Initialized Successfully");
 }
 
-// =============== WRITE HOLDING REGISTERS ===============
-// Write command to start the ventilation system
-void writeSingleRegister_start() {
-  holdingRegs[0] = 0; // Value for "start" command
-  modbus.setTransmitBuffer(0, holdingRegs[0]);
-
+// =============== WRITE FAN MODE ===============
+// Fan Mode Control (Holding Register 367)
+// 0 = Off
+// 1 = Manual Reduced Speed
+// 2 = Manual Normal Speed
+// 3 = Auto Speed
+void writeFanMode(uint16_t mode) {
   unsigned long startTime = millis();
-  uint8_t result = modbus.writeSingleRegister(367, 0);
+
+  uint8_t result = modbus.writeSingleRegister(367, mode);
   unsigned long duration = millis() - startTime;
 
   if (result == modbus.ku8MBSuccess) {
-    Serial.printf("Holding Reg[367] written = %u (Response time: %lums)\n",
-                  holdingRegs[0], duration);
+    Serial.printf("SUCCESS: FanMode=%u written to Reg[367]. Time=%lums\n",
+                  mode, duration);
   } else {
-    Serial.printf("Write Error (code %u) [Response time: %lums]\n", result, duration);
+    Serial.printf("ERROR writing FanMode=%u to Reg[367] (code %u). Time=%lums\n",
+                  mode, result, duration);
   }
 }
 
 // =============== READ INPUT REGISTERS ===============
-// Read one input register (function 04)
 void readInputRegisters() {
   unsigned long startTime = millis();
-  uint8_t result = modbus.readInputRegisters(19, 1); 
+  uint8_t result = modbus.readInputRegisters(19, 1);
   unsigned long duration = millis() - startTime;
 
   if (result == modbus.ku8MBSuccess) {
     inputRegs[0] = modbus.getResponseBuffer(0);
 
-    // Dividing the temperature with 10 in order to get the correct value out
     float temperature = inputRegs[0] / 10.0f;
-    Serial.printf("Input Reg[19] = %u (Temperature: %.1f C) (Response time: %lums)\n",
+    Serial.printf("Input Reg[19] = %u (Temperature: %.1f °C)  Time=%lums\n",
                   inputRegs[0], temperature, duration);
   } else {
-    Serial.printf("Read Input Error (code %u) [Response time: %lums]\n", result, duration);
+    Serial.printf("Read Input Error (code %u). Time=%lums\n",
+                  result, duration);
   }
 }
 
 // =============== LOOP ===============
 void loop() {
-  // Step 1: Write start command (holding reg 367)
-  writeSingleRegister_start();
+  // Step 1: Set fanmode to reduced (1)
+  writeFanMode(1);
 
-  // Step 2: Allow slave to process
+  // Step 2: Allow system to react
   delay(300);
 
-  // Step 3: Read input register 19
+  // Step 3: Read temperature (reg 19)
   readInputRegisters();
 
-  // Diagnostic separator
   Serial.println("----------------------------");
 
-  // Step 5: Wait before next Modbus cycle
   delay(2000);
 }
