@@ -1,6 +1,7 @@
 /*
-v4 af ModbusMaster programmet til DV10 Ventilationsanlæg
-Programmet rapportere 'RunMode', 'Heat Exchange Efficiency', Fugtighed, 'Runtime' og kan håndtere løbende bruger-input til at ændre RunMode mm.
+v5 af ModbusMaster programmet til DV10 Ventilationsanlæg
+Programmet rapportere 'RunMode', 'Heat Exchange Efficiency', 'Runtime', temperatur, tryk, 
+flow og kan håndtere løbende bruger-input til at ændre RunMode mm.
 
 Kommandoer:
 0 = Sluk ventilation
@@ -74,14 +75,18 @@ struct FlowRegister {
 FlowRegister flowRegisters[] = {
   {14, "Supply Air Flow"},
   {15, "Extract Air Flow"},
+  {292, "Extra Supply Air Flow"},
+  {293, "Extra Extract Air Flow"},
 };
 
 const int NUM_FLOWS = sizeof(flowRegisters) / sizeof(flowRegisters[0]);
 
+// Runtime struct
 struct RuntimeRegister {
   uint16_t address;
   const char* name;
 };
+
 
 RuntimeRegister runtimeRegisters[] = {
   {3, "Supply Air Fan Runtime"},
@@ -89,18 +94,6 @@ RuntimeRegister runtimeRegisters[] = {
 };
 
 const int NUM_RUNTIMES = sizeof(runtimeRegisters) / sizeof(runtimeRegisters[0]);
-
-struct HumidityRegister {
-  uint16_t address;
-  const char* name;
-};
-
-HumidityRegister humidityRegisters[] = {
-  {22, "Room Humidity"},
-  {23, "Duct Humidity"},
-};
-
-const int NUM_HUMIDITIES = sizeof(humidityRegisters) / sizeof(humidityRegisters[0]);
 
 // ================ RS485 Direction Control ================
 void preTransmission() {
@@ -187,6 +180,7 @@ bool readEfficiency() {
   }
 }
 
+
 // =============== READ RUN MODE ===============
 bool readRunMode() {
   uint8_t result = modbus.readInputRegisters(2, 1);
@@ -272,11 +266,51 @@ bool readSingleFlow(uint16_t regAddress, const char* name) {
   }
 }
 
+// =============== READ SINGLE RUNTIME ===============
+bool readSingleRuntime(uint16_t regAddress, const char* name) {
+  uint8_t result = modbus.readInputRegisters(regAddress, 1);
+
+  if (result == modbus.ku8MBSuccess) {
+    uint16_t raw = modbus.getResponseBuffer(0);
+    Serial.printf("  %-25s [Reg %3u]: %5u (minutes)\n",
+                  name, regAddress, raw);
+    return true;
+  } else {
+    Serial.printf("  %-25s [Reg %3u]: ERROR (code %u)\n",
+                  name, regAddress, result);
+    return false;
+  }
+}
+
+// =============== READ ALARM SUMMARY ===============
+bool readAlarmStatus(uint16_t regAddress, const char* name) {
+  uint8_t result = modbus.readInputRegisters(regAddress, 1);
+
+  if (result == modbus.ku8MBSuccess) {
+    uint16_t rawValue = modbus.getResponseBuffer(0);
+
+    if (regAddress == 183) {
+      Serial.printf("  %-25s [Reg %3u]: %s\n", name, regAddress, (rawValue > 0 ? "Aktiv" : "Ingen"));
+    } else {
+      if (rawValue == 0) {
+        Serial.printf("  %-25s [Reg %3u]: Ingen alarm\n", name, regAddress);
+      } else {
+        Serial.printf("  %-25s [Reg %3u]: Alarm aktiv (kode: %u)\n", name, regAddress, rawValue);
+      }
+    }
+    return true;
+  } else {
+    Serial.printf("  %-25s [Reg %3u]: ERROR (code %u)\n", name, regAddress, result);
+    return false;
+  }
+}
+
+
 // =============== READ ALL SENSORS ===============
 void readAllSensors() {
   unsigned long startTime = millis();
   int totalSuccess = 0;
-  int totalSensors = 2 + NUM_TEMPS + NUM_PRESSURES + NUM_FLOWS; // Efficiency + RunMode + temps + pressures + flows
+  int totalSensors = 2 + NUM_TEMPS + NUM_PRESSURES + NUM_FLOWS + NUM_RUNTIMES; // Efficiency + RunMode + temps + pressures + flows
   
   Serial.println("\n╔════════════════════════════════════════════════╗");
   Serial.println("║          READING ALL SENSORS                   ║");
@@ -289,7 +323,7 @@ void readAllSensors() {
   if (readRunMode()) totalSuccess++;
   delay(50);
   
-  // Temperatures
+  // Temperatures (værdi i C)
   Serial.println("\n--- Temperatures ---");
   for (int i = 0; i < NUM_TEMPS; i++) {
     if (readSingleTemp(tempRegisters[i].address, tempRegisters[i].name)) {
@@ -298,7 +332,7 @@ void readAllSensors() {
     delay(50);
   }
   
-  // Pressures
+  // Pressures (værdi i Pa)
   Serial.println("\n--- Pressures ---");
   for (int i = 0; i < NUM_PRESSURES; i++) {
     if (readSinglePressure(pressureRegisters[i].address, pressureRegisters[i].name)) {
@@ -307,7 +341,7 @@ void readAllSensors() {
     delay(50);
   }
   
-  // Air Flows
+  // Air Flows (værdi i m3/h)
   Serial.println("\n--- Air Flows ---");
   for (int i = 0; i < NUM_FLOWS; i++) {
     if (readSingleFlow(flowRegisters[i].address, flowRegisters[i].name)) {
@@ -316,9 +350,20 @@ void readAllSensors() {
     delay(50);
   }
   
+    // Runtime (værdi i minutter)
+  Serial.println("\n--- Runtime ---");
+  for (int i = 0; i < NUM_RUNTIMES; i++) {
+    if (readSingleRuntime(runtimeRegisters[i].address, runtimeRegisters[i].name)){
+      totalSuccess++;
+    }
+    delay(50);
+  } 
+
+
+  
   unsigned long duration = millis() - startTime;
   Serial.println("\n╔════════════════════════════════════════════════╗");
-  Serial.printf("║  Total: %d/%d successful reads in %lums      ║\n",
+  Serial.printf("║  Total: %d/%d successful reads in %lums         ║\n",
                 totalSuccess, totalSensors, duration);
   Serial.println("╚════════════════════════════════════════════════╝\n");
 }
